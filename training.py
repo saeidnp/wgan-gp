@@ -1,3 +1,4 @@
+import pdb
 import imageio
 import numpy as np
 import torch
@@ -5,6 +6,13 @@ import torch.nn as nn
 from torchvision.utils import make_grid
 from torch.autograd import Variable
 from torch.autograd import grad as torch_grad
+from tqdm import tqdm
+
+
+def inf_dataloader(dataloader):
+    while True:
+        for data in dataloader:
+            yield data
 
 
 class Trainer():
@@ -26,32 +34,34 @@ class Trainer():
             self.G.cuda()
             self.D.cuda()
 
-    def _critic_train_iteration(self, data):
+    def _critic_train_iteration(self, critic_loader):
         """ """
-        # Get generated data
-        batch_size = data.size()[0]
-        generated_data = self.sample_generator(batch_size)
+        for _ in range(self.critic_iterations):
+            data = next(critic_loader)[0]
+            # Get generated data
+            batch_size = data.size()[0]
+            generated_data = self.sample_generator(batch_size)
 
-        # Calculate probabilities on real and generated data
-        data = Variable(data)
-        if self.use_cuda:
-            data = data.cuda()
-        d_real = self.D(data)
-        d_generated = self.D(generated_data)
+            # Calculate probabilities on real and generated data
+            data = Variable(data)
+            if self.use_cuda:
+                data = data.cuda()
+            d_real = self.D(data)
+            d_generated = self.D(generated_data)
 
-        # Get gradient penalty
-        gradient_penalty = self._gradient_penalty(data, generated_data)
-        self.losses['GP'].append(gradient_penalty.data[0])
+            # Get gradient penalty
+            gradient_penalty = self._gradient_penalty(data, generated_data)
+            self.losses['GP'].append(gradient_penalty.item())
 
-        # Create total loss and optimize
-        self.D_opt.zero_grad()
-        d_loss = d_generated.mean() - d_real.mean() + gradient_penalty
-        d_loss.backward()
+            # Create total loss and optimize
+            self.D_opt.zero_grad()
+            d_loss = d_generated.mean() - d_real.mean() + gradient_penalty
+            d_loss.backward()
 
-        self.D_opt.step()
+            self.D_opt.step()
 
-        # Record loss
-        self.losses['D'].append(d_loss.data[0])
+            # Record loss
+            self.losses['D'].append(d_loss.item())
 
     def _generator_train_iteration(self, data):
         """ """
@@ -68,7 +78,7 @@ class Trainer():
         self.G_opt.step()
 
         # Record loss
-        self.losses['G'].append(g_loss.data[0])
+        self.losses['G'].append(g_loss.item())
 
     def _gradient_penalty(self, real_data, generated_data):
         batch_size = real_data.size()[0]
@@ -95,7 +105,7 @@ class Trainer():
         # Gradients have shape (batch_size, num_channels, img_width, img_height),
         # so flatten to easily take norm per example in batch
         gradients = gradients.view(batch_size, -1)
-        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data[0])
+        self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().item())
 
         # Derivatives of the gradient close to 0 can cause problems because of
         # the square root, so manually calculate norm and add epsilon
@@ -105,12 +115,13 @@ class Trainer():
         return self.gp_weight * ((gradients_norm - 1) ** 2).mean()
 
     def _train_epoch(self, data_loader):
+        # critic_loader indefinitely samples from the dataset batches and is used for training the critic.
+        critic_loader = inf_dataloader(data_loader)
         for i, data in enumerate(data_loader):
             self.num_steps += 1
-            self._critic_train_iteration(data[0])
-            # Only update generator every |critic_iterations| iterations
-            if self.num_steps % self.critic_iterations == 0:
-                self._generator_train_iteration(data[0])
+            # Update the critic for critic_iterations iterations
+            self._critic_train_iteration(critic_loader)
+            self._generator_train_iteration(data[0])
 
             if i % self.print_every == 0:
                 print("Iteration {}".format(i + 1))
@@ -128,7 +139,7 @@ class Trainer():
                 fixed_latents = fixed_latents.cuda()
             training_progress_images = []
 
-        for epoch in range(epochs):
+        for epoch in tqdm(range(epochs)):
             print("\nEpoch {}".format(epoch + 1))
             self._train_epoch(data_loader)
 
@@ -138,11 +149,12 @@ class Trainer():
                 # Convert to numpy and transpose axes to fit imageio convention
                 # i.e. (width, height, channels)
                 img_grid = np.transpose(img_grid.numpy(), (1, 2, 0))
+                img_grid = (img_grid * 255).astype(np.uint8)
                 # Add image grid to training progress
                 training_progress_images.append(img_grid)
 
         if save_training_gif:
-            imageio.mimsave('./training_{}_epochs.gif'.format(epochs),
+            imageio.mimsave('./training_mnist_{}_epochs.gif'.format(epochs),
                             training_progress_images)
 
     def sample_generator(self, num_samples):
