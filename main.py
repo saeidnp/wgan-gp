@@ -1,10 +1,12 @@
 import torch
 import torch.optim as optim
-from dataloaders import get_mnist_dataloaders, get_lsun_dataloader
+from dataloaders import get_mnist_dataloaders, get_fashion_mnist_dataloaders, get_lsun_dataloader
 from models import Generator, Discriminator
 from training import Trainer
 
 data_loader, _ = get_mnist_dataloaders(batch_size=64)
+#data_loader, _ = get_fashion_mnist_dataloaders(batch_size=64)
+#data_loader = get_lsun_dataloader(path_to_data="/ubc/cs/research/plai-scratch/saeid/datasets/lsun", batch_size=64)
 img_size = (32, 32, 1)
 
 generator = Generator(img_size=img_size, latent_dim=100, dim=16)
@@ -15,7 +17,7 @@ print(discriminator)
 
 # Initialize optimizers
 lr = 1e-4
-betas = (.9, .99)
+betas = (.5, .999)
 G_optimizer = optim.Adam(generator.parameters(), lr=lr, betas=betas)
 D_optimizer = optim.Adam(discriminator.parameters(), lr=lr, betas=betas)
 
