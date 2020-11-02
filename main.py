@@ -17,7 +17,7 @@ print(discriminator)
 
 # Initialize optimizers
 lr = 1e-4
-betas = (.5, .999)
+betas = (.5, .9)
 G_optimizer = optim.Adam(generator.parameters(), lr=lr, betas=betas)
 D_optimizer = optim.Adam(discriminator.parameters(), lr=lr, betas=betas)
 
